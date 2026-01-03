@@ -10,25 +10,8 @@ from datetime import datetime
 
 from dataloader import get_dataloaders
 from utils import set_seed, plot_confusion_matrix, plot_training_curves, calculate_class_weights
-from model import SiameseResNetRuleModel
+from model2 import SiameseResNetRuleModel
 import torch.nn.functional as F  # 新增這行
-
-# pip install torch torchvision scikit-learn tqdm argparse 
-# ---------------- Exam Rule Loss ----------------
-def exam_rule_loss(exam_probs, targets, class_weights=None):
-    """
-    exam_probs: (B,3) 來自 model 的 exam-level 機率
-    targets:   (B,)  exam-level label（0/1/2）
-    class_weights: tensor(num_classes,) 或 None
-    """
-    # 轉成 log prob
-    log_p = torch.log(exam_probs)
-
-    if class_weights is not None:
-        return F.nll_loss(log_p, targets, weight=class_weights)
-    else:
-        return F.nll_loss(log_p, targets)
-
 
 # ==========================================
 # 參數解析
@@ -60,7 +43,7 @@ def parse_args():
     parser.add_argument('--num_classes', type=int, default=6,
                         help='分類類別數量')
     parser.add_argument('--architecture', type=str, choices=['baseline','ipsi','bi','cross_view'], default='cross_view', help='模型架構')
-
+    parser.add_argument('--concate_method', type=str, choices=['concat','concat_linear','concat_mlp'], default='concat', help='exam特徵拼接方式')
     # 訓練
     parser.add_argument('--batch_size', type=int, default=8,
                         help='Batch size')
@@ -125,10 +108,10 @@ def train_one_epoch(model, loader, criterion, optimizer, device, epoch, scaler, 
         
         with torch.amp.autocast('cuda', enabled=args.mixed_precision):
             # ⭐ 新：model 回傳 exam_probs, left_logits, right_logits
-            exam_probs, left_logits, right_logits = model(images)
+            exam_logits = model(images)
 
             # 1. exam-level loss
-            cls_loss = criterion(exam_probs, labels)
+            cls_loss = criterion(exam_logits, labels)
 
             loss = cls_loss 
             loss = loss / accumulation_steps
@@ -143,8 +126,7 @@ def train_one_epoch(model, loader, criterion, optimizer, device, epoch, scaler, 
         running_loss += loss.item() * accumulation_steps
         running_cls_loss += cls_loss.item()
 
-        # ⭐ 用 exam_probs 取預測
-        preds = torch.argmax(exam_probs, dim=1).cpu().numpy()
+        preds = torch.argmax(exam_logits, dim=1).cpu().numpy()
         all_preds.extend(preds)
         all_labels.extend(labels.cpu().numpy())
         
@@ -176,12 +158,12 @@ def validate(model, loader, criterion, device, args, phase="Valid"):
             labels = labels.to(device)
             
             with torch.amp.autocast('cuda', enabled=args.mixed_precision):
-                exam_probs, left_logits, right_logits = model(images)
-                loss = criterion(exam_probs, labels)
+                exam_logits = model(images)
+                loss = criterion(exam_logits, labels)
             
             running_loss += loss.item()
             
-            preds = torch.argmax(exam_probs, dim=1).cpu().numpy()
+            preds = torch.argmax(exam_logits, dim=1).cpu().numpy()
             all_preds.extend(preds)
             all_labels.extend(labels.cpu().numpy())
             
@@ -204,9 +186,9 @@ def test(model, loader, device, args, exp_dir):
             labels = labels.to(device)
             
             with torch.amp.autocast('cuda', enabled=args.mixed_precision):
-                exam_probs, left_logits, right_logits = model(images)
+                exam_logits = model(images)
             
-            preds = torch.argmax(exam_probs, dim=1).cpu().numpy()
+            preds = torch.argmax(exam_logits, dim=1).cpu().numpy()
             all_preds.extend(preds)
             all_labels.extend(labels.cpu().numpy())
 
@@ -241,7 +223,7 @@ def test(model, loader, device, args, exp_dir):
         print(line)
     
     # 儲存報告到檔案
-    report_path = 'report.txt'
+    report_path = 'report2.txt'
     with open(report_path, 'a+', encoding='utf-8') as f:
         f.write('\n'.join(report_content))
     print(f"\n✅ 測試報告已儲存至: {report_path}")
@@ -314,6 +296,7 @@ def main():
         pretrained=args.pretrained, 
         num_classes=args.num_classes,
         architecture=args.architecture,
+        concate_method=args.concate_method
     )
     model = model.to(device)
     
@@ -334,17 +317,13 @@ def main():
         test(model, test_loader, device, args, exp_dir)
         return
     
-    # 4. Loss Function for exam-rule
+    # 4. Loss Function
     if args.use_class_weights:
-        print("使用類別權重於損失函數中 (exam rule loss)")
-        # 建立一個 closure，把 class_weights 固定住
-        def criterion(exam_probs, targets):
-            return exam_rule_loss(exam_probs, targets, class_weights)
+        print("使用類別權重於 CrossEntropyLoss")
+        criterion = nn.CrossEntropyLoss(weight=class_weights)
     else:
-        def criterion(exam_probs, targets):
-            return exam_rule_loss(exam_probs, targets, None)
-
-    
+        criterion = nn.CrossEntropyLoss()
+        
     optimizer = optim.AdamW(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
     scheduler = CosineAnnealingLR(optimizer, T_max=args.num_epochs)
     
