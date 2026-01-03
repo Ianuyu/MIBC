@@ -61,7 +61,7 @@ def parse_args():
                         help='分類類別數量')
     parser.add_argument('--architecture', type=str, choices=['baseline','ipsi','bi','cross_view'], default='cross_view', help='模型架構')
     parser.add_argument('--concate_method', type=str, choices=['concat','concat_linear','concat_mlp'], default='concat', help='多視角特徵融合方式')
-    parser.add_argument('--decision_rule', type=str, choices=['max','avg'], default='max', help='exam-level 決策規則')
+    parser.add_argument('--decision_rule', type=str, choices=['max','rule'], default='max', help='exam-level 決策規則')
 
     # 訓練
     parser.add_argument('--batch_size', type=int, default=8,
