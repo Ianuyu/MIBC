@@ -22,11 +22,11 @@ BACKBONES=("resnet18" "resnet50" "efficientnet_b0" "efficientnet_b3" "convnext_t
 # BACKBONES=("resnet50" "efficientnet_b0" "efficientnet_b5" "convnext_tiny" "convnext_small")
 
 # 想要跑的架構列表
-ARCHITECTURES=("baseline" "ipsi" "bi" "cross_view")    # 選項: cross_view, baseline, ipsi, bi
+ARCHITECTURES=("baseline" "cross_view")    # 選項: cross_view, baseline, ipsi, bi
 
 # 想要跑的拼接方式列表
-CONCATE_METHODS=("concat" "concat_linear" "concat_mlp")
-DESISION_RULES=("max" "rule")
+CONCATE_METHODS=("concat_mlp")
+DESISION_RULES=("avg" "rule")
 
 # 硬體相關參數
 BATCH_SIZE=4     
