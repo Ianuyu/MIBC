@@ -12,3 +12,19 @@ wheels/
 
 #data/
 processed_datasets/
+
+# Experiment results and model outputs
+0103_baseon_breastlevel_decisionrule/
+0107_baseon_breastlevel_decisionrule/
+0108_baseon_breastlevel_decisionrule/
+*/convnext_*/
+*/resnet*/
+
+# Processed images
+clahe/
+
+# Reports and logs
+*.txt
+!README.txt
+*.log
+
