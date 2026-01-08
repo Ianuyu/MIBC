@@ -309,4 +309,4 @@ class SiameseResNetRuleModel(nn.Module):
         else:
             raise ValueError(f"不支援的決策規則: {self.decision_rule}")
 
-        return exam_prob, L_logits, R_logits
+        return exam_log_prob, L_prob, R_prob, L_logits, R_logits
