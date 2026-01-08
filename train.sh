@@ -5,20 +5,20 @@
 # ==========================================
 
 # 請將以下路徑改為您電腦上的實際位置
-DATA_ROOT="processed_datasets"  # 圖片根目錄
+DATA_ROOT="/home/bsplab/Desktop/MIBC/clahe"  # 圖片根目錄
 CSV_DIR="csv/three_classes"       # CSV 檔案目錄
 
 TRAIN_CSV="${CSV_DIR}/train_labels.csv"
 VAL_CSV="${CSV_DIR}/val_labels.csv"
 TEST_CSV="${CSV_DIR}/test_labels.csv"
-SAVE_DIR="./0103_baseon_breastlevel_decisionrule"
+SAVE_DIR="./0108_baseon_breastlevel_decisionrule"
 
 # ==========================================
 # 訓練超參數設定
 # ==========================================
 
 # 想要跑的模型列表
-BACKBONES=("resnet18" "resnet50" "efficientnet_b0" "efficientnet_b3" "convnext_tiny" "convnext_small")
+BACKBONES=("resnet22_nyu" "resnet50" "convnext_tiny" )
 # BACKBONES=("resnet50" "efficientnet_b0" "efficientnet_b5" "convnext_tiny" "convnext_small")
 
 # 想要跑的架構列表
@@ -27,6 +27,9 @@ ARCHITECTURES=("baseline" "cross_view")    # 選項: cross_view, baseline, ipsi,
 # 想要跑的拼接方式列表
 CONCATE_METHODS=("concat_mlp")
 DESISION_RULES=("avg" "rule")
+
+# NYU ResNet22 權重路徑
+NYU_WEIGHTS_PATH="resnet22_weight/ImageOnly__ModeImage_weights.p"
 
 # 硬體相關參數
 BATCH_SIZE=4     
@@ -58,8 +61,14 @@ for BACKBONE in "${BACKBONES[@]}"; do
                 echo "   Batch Size:    ${BATCH_SIZE} (Accum: ${ACCUM_STEPS} => Effective: ${EFFECTIVE_BS})"
                 echo "========================================================"
 
+                # 根據 backbone 決定是否加入 NYU 權重參數
+                NYU_WEIGHTS_ARG=""
+                if [ "$BACKBONE" == "resnet22_nyu" ]; then
+                    NYU_WEIGHTS_ARG="--nyu_weights_path ${NYU_WEIGHTS_PATH}"
+                fi
+
                 # 執行 Python 腳本
-                uv run main.py \
+                python main.py \
                     --csv_train "${TRAIN_CSV}" \
                     --csv_val "${VAL_CSV}" \
                     --csv_test "${TEST_CSV}" \
@@ -68,6 +77,7 @@ for BACKBONE in "${BACKBONES[@]}"; do
                     --num_classes 3 \
                     --experiment_id "${EXP_ID}" \
                     --backbone "${BACKBONE}" \
+                    ${NYU_WEIGHTS_ARG} \
                     --architecture "${ARCHITECTURE}" \
                     --concate_method "${CONCATE_METHOD}" \
                     --decision_rule "${DECISION_RULE}" \

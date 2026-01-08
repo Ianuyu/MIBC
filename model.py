@@ -5,6 +5,7 @@ import torchvision.models as models
 
 from IpsilateralFusion import IpsiCrossViewFusion
 from BilateralFusion import BilateralFusion
+from nyu_layers import resnet22_nyu, load_nyu_pretrained_weights
 
 
 class SiameseResNetRuleModel(nn.Module):
@@ -23,7 +24,13 @@ class SiameseResNetRuleModel(nn.Module):
         # helper: 建一個 backbone，回傳 (model, feature_dim)
         # ----------------------------------------------------
         def build_backbone(name, pretrained_flag):
-            if name == 'resnet50':
+            if name == 'resnet22_nyu':
+                # NYU breast cancer classifier ResNet22
+                m = resnet22_nyu(input_channels=1)
+                feat_dim = 256  # NYU ResNet22 輸出維度
+                # 注意：NYU 權重稍後透過 load_nyu_pretrained() 載入
+                
+            elif name == 'resnet50':
                 m = models.resnet50(
                     weights=models.ResNet50_Weights.DEFAULT if pretrained_flag else None
                 )
@@ -136,6 +143,71 @@ class SiameseResNetRuleModel(nn.Module):
         else:
             raise ValueError(f"不支援的 concate_method: {self.concate_method}")
 
+    def load_nyu_pretrained(self, weights_path):
+        """
+        載入 NYU breast cancer classifier 的預訓練權重
+        分別載入 CC 和 MLO 權重到兩個 backbone
+        
+        Args:
+            weights_path: NYU 權重檔案路徑 (.p)
+        """
+        if self.backbone_name != 'resnet22_nyu':
+            raise ValueError("只有 resnet22_nyu backbone 支援載入 NYU 權重")
+            
+        print(f'\n{"="*60}')
+        print('📥 載入 NYU ResNet22 預訓練權重')
+        print(f'{"="*60}')
+        print(f'權重檔案: {weights_path}')
+        print(f'架構: CC backbone + MLO backbone (獨立權重)\n')
+        
+        # 載入 CC 視角權重到 backbone_cc
+        print('1️⃣  載入 CC 權重到 backbone_cc')
+        load_nyu_pretrained_weights(self.backbone_cc, weights_path, view='cc')
+        self._adapt_first_conv_for_rgb(self.backbone_cc)
+        
+        # 載入 MLO 視角權重到 backbone_mlo  
+        print('\n2️⃣  載入 MLO 權重到 backbone_mlo')
+        load_nyu_pretrained_weights(self.backbone_mlo, weights_path, view='mlo')
+        self._adapt_first_conv_for_rgb(self.backbone_mlo)
+        
+        print(f'\n{"="*60}')
+        print('✅ NYU 預訓練權重載入完成')
+        print(f'{"="*60}\n')
+        
+    def _adapt_first_conv_for_rgb(self, backbone):
+        """
+        將 NYU 的 1 通道第一層卷積轉換為 3 通道，支援 RGB 輸入
+        使用權重複製策略：將 1 通道權重複製 3 次並平均
+        """
+        first_conv = backbone.first_conv
+        if first_conv.in_channels == 1:
+            # 獲取原始權重 (16, 1, 7, 7)
+            old_weight = first_conv.weight.data
+            
+            # 創建新的 3 通道卷積層
+            new_conv = torch.nn.Conv2d(
+                in_channels=3,
+                out_channels=first_conv.out_channels,
+                kernel_size=first_conv.kernel_size,
+                stride=first_conv.stride,
+                padding=first_conv.padding,
+                bias=first_conv.bias is not None
+            )
+            
+            # 將 1 通道權重擴展到 3 通道（複製 3 次並除以 3 保持數值規模）
+            with torch.no_grad():
+                new_weight = old_weight.repeat(1, 3, 1, 1) / 3.0
+                new_conv.weight.data = new_weight
+                
+                if first_conv.bias is not None:
+                    new_conv.bias.data = first_conv.bias.data.clone()
+            
+            # 替換第一個卷積層
+            backbone.first_conv = new_conv
+            print("   ✓ 已將第一層卷積從 1 通道轉換為 3 通道")
+        else:
+            print("   ✓ 第一層卷積已經是 3 通道")
+
     # ---------------- feature extractor ----------------
     def forward_one_view(self, x, view_type: str):
         """
@@ -149,7 +221,11 @@ class SiameseResNetRuleModel(nn.Module):
         else:
             raise ValueError("view_type 必須是 'cc' 或 'mlo'")
 
-        if 'resnet' in self.backbone_name:
+        if self.backbone_name == 'resnet22_nyu':
+            # NYU ResNet22 直接前向傳播
+            x = backbone(x)
+            
+        elif 'resnet' in self.backbone_name:
             x = backbone.conv1(x)
             x = backbone.bn1(x)
             x = backbone.relu(x)
@@ -309,4 +385,6 @@ class SiameseResNetRuleModel(nn.Module):
         else:
             raise ValueError(f"不支援的決策規則: {self.decision_rule}")
 
+        exam_log_prob = torch.log(exam_prob + 1e-8)
+        
         return exam_log_prob, L_prob, R_prob, L_logits, R_logits

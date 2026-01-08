@@ -52,7 +52,7 @@ def parse_args():
     
     # 模型參數
     parser.add_argument('--backbone', type=str, default='resnet50',
-                        choices=['resnet18','resnet50', 'resnet101', 'efficientnet_b0', 'efficientnet_b3', 
+                        choices=['resnet18','resnet50', 'resnet101', 'resnet22_nyu', 'efficientnet_b0', 'efficientnet_b3', 
                                 'efficientnet_b5', 'convnext_tiny', 'convnext_small', 'convnext_base'],
                         help='骨幹網路選擇')
     parser.add_argument('--pretrained', action='store_true', default=True,
@@ -61,7 +61,7 @@ def parse_args():
                         help='分類類別數量')
     parser.add_argument('--architecture', type=str, choices=['baseline','ipsi','bi','cross_view'], default='cross_view', help='模型架構')
     parser.add_argument('--concate_method', type=str, choices=['concat','concat_linear','concat_mlp'], default='concat', help='多視角特徵融合方式')
-    parser.add_argument('--decision_rule', type=str, choices=['max','rule'], default='max', help='exam-level 決策規則')
+    parser.add_argument('--decision_rule', type=str, choices=['max','avg','rule'], default='max', help='exam-level 決策規則')
 
     # 訓練
     parser.add_argument('--batch_size', type=int, default=8,
@@ -82,6 +82,9 @@ def parse_args():
                         help='是否在損失函數中使用類別權重')
     parser.add_argument('--use_weighted_sampler', action='store_true', default=False,
                         help='是否使用加權隨機採樣器')
+    # NYU 相關參數
+    parser.add_argument('--nyu_weights_path', type=str, default=None,
+                        help='NYU breast cancer classifier 預訓練權重路徑')
     # 其他參數
     parser.add_argument('--save_dir', type=str, default='experiments',
                         help='實驗根目錄')
@@ -320,6 +323,16 @@ def main():
         decision_rule=args.decision_rule
     )
     model = model.to(device)
+    
+    # 載入 NYU 預訓練權重 (如果使用 resnet22_nyu)
+    if args.backbone == 'resnet22_nyu' and args.nyu_weights_path:
+        if os.path.exists(args.nyu_weights_path):
+            model.load_nyu_pretrained(args.nyu_weights_path)
+        else:
+            print(f"⚠️  NYU 權重檔案不存在: {args.nyu_weights_path}")
+            print("   將使用隨機初始化的權重")
+    elif args.backbone == 'resnet22_nyu':
+        print("⚠️  使用 resnet22_nyu 但未指定 --nyu_weights_path，將使用隨機初始化")
     
     # 載入 checkpoint (如果有)
     if args.checkpoint:
